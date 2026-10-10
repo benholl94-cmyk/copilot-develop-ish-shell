@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONFIG_FILE="${APP_ROOT}/config/shell.env"
+
+if [[ -f "${CONFIG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CONFIG_FILE}"
+fi
+
+APP_NAME="${APP_NAME:-ish-shell}"
+APP_VERSION="${APP_VERSION:-$(cat "${APP_ROOT}/VERSION" 2>/dev/null || echo 1.0.0)}"
+
+usage() {
+  cat <<EOF
+Usage: ish-shell [command]
+
+Commands:
+  --version, -v         print version
+  --health-check        validate environment
+  --build               run build pipeline
+  --bootstrap           run bootstrap steps
+  --grade-workbase      run workbase grading
+  --grade-codebase      run codebase grading
+  --help                show this help
+
+Environment:
+  APP_ROOT=${APP_ROOT}
+  CONFIG_FILE=${CONFIG_FILE}
+EOF
+}
+
+version() {
+  printf '%s\n' "${APP_VERSION}"
+}
+
+health_check() {
+  local failures=0
+  local required=("APP_ROOT" "BUILD_DIR" "LOG_DIR" "BIN_DIR" "CONFIG_DIR")
+
+  echo "[health-check] validating ${APP_NAME} environment"
+
+  for key in "${required[@]}"; do
+    if [[ -z "${!key:-}" ]]; then
+      echo "[ERROR] Missing required variable: ${key}"
+      failures=$((failures + 1))
+    fi
+  done
+
+  for path in "${APP_ROOT}" "${BUILD_DIR}" "${LOG_DIR}" "${BIN_DIR}" "${CONFIG_DIR}"; do
+    if [[ ! -d "${path}" ]]; then
+      echo "[WARN] Missing directory: ${path}"
+      mkdir -p "${path}"
+    fi
+  done
+
+  if [[ ${failures} -gt 0 ]]; then
+    echo "[health-check] failed with ${failures} issue(s)"
+    return 1
+  fi
+
+  echo "[health-check] ok"
+  return 0
+}
+
+build() {
+  echo "[build] starting ${APP_NAME} build"
+  bash "${APP_ROOT}/scripts/build.sh"
+}
+
+bootstrap() {
+  echo "[bootstrap] preparing workspace"
+  bash "${APP_ROOT}/scripts/bootstrap.sh"
+}
+
+grade_workbase() {
+  echo "[grade-workbase] starting workbase validation"
+  bash "${APP_ROOT}/scripts/grade-workbase.sh"
+}
+
+grade_codebase() {
+  echo "[grade-codebase] starting codebase validation"
+  bash "${APP_ROOT}/scripts/grade-codebase.sh"
+}
+
+main() {
+  case "${1:---help}" in
+    --version|-v)
+      version
+      ;;
+    --health-check)
+      health_check
+      ;;
+    --build)
+      build
+      ;;
+    --bootstrap)
+      bootstrap
+      ;;
+    --grade-workbase)
+      grade_workbase
+      ;;
+    --grade-codebase)
+      grade_codebase
+      ;;
+    --help|-h|help)
+      usage
+      ;;
+    "")
+      usage
+      ;;
+    *)
+      echo "[ERROR] unknown command: ${1}"
+      usage
+      return 1
+      ;;
+  esac
+}
+
+main "$@"
